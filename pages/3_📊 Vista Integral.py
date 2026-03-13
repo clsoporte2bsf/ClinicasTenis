@@ -587,14 +587,18 @@ with col_asist:
 st.markdown("<div style='height:24px'></div>", unsafe_allow_html=True)
 
 # ============================
-# RADAR
+# RADAR (Alumno vs Promedio de Grupo)
 # ============================
+
+import plotly.graph_objects as go
+from sqlalchemy import text
+import streamlit as st
 
 id_evaluacion = evaluacion.id_evaluacion
 
-# 2️⃣ Traer golpes de esa evaluación
+# 1) Traer golpes de esa evaluación (alumno)
 query_tecnica = text("""
-SELECT g.nombre_golpe, et.preparacion, et.contacto, et.terminacion
+SELECT g.id_golpe, g.nombre_golpe, et.preparacion, et.contacto, et.terminacion
 FROM evaluacion_tecnica et
 JOIN golpes g ON g.id_golpe = et.id_golpe
 WHERE et.id_evaluacion = :id;
@@ -607,7 +611,39 @@ if not golpes:
     st.info("ℹ️ No hay datos técnicos para esta evaluación")
     st.stop()
 
-# 3️⃣ Construir labels y valores
+# 2) Obtener el grupo del alumno (a partir de la evaluación actual)
+query_grupo = text("""
+SELECT a.grupo
+FROM evaluaciones e
+JOIN alumno a ON a.id_alumno = e.id_alumno
+WHERE e.id_evaluacion = :id_evaluacion
+LIMIT 1;
+""")
+
+with engine.begin() as conn:
+    grupo_alumno = conn.execute(query_grupo, {"id_evaluacion": id_evaluacion}).scalar()
+
+# 3) Promedios del grupo por golpe (prep/cont/term)
+query_promedio_grupo = text("""
+SELECT
+  g.id_golpe,
+  g.nombre_golpe,
+  AVG(et.preparacion) AS avg_preparacion,
+  AVG(et.contacto)    AS avg_contacto,
+  AVG(et.terminacion) AS avg_terminacion
+FROM evaluaciones e
+JOIN alumno a              ON a.id_alumno = e.id_alumno
+JOIN evaluacion_tecnica et ON et.id_evaluacion = e.id_evaluacion
+JOIN golpes g              ON g.id_golpe = et.id_golpe
+WHERE a.grupo = :grupo
+GROUP BY g.id_golpe, g.nombre_golpe
+ORDER BY g.id_golpe;
+""")
+
+with engine.begin() as conn:
+    promedios = conn.execute(query_promedio_grupo, {"grupo": grupo_alumno}).fetchall()
+
+# 4) Construir labels y valores (alumno)
 labels, values = [], []
 
 for g in golpes:
@@ -622,29 +658,58 @@ for g in golpes:
         g.terminacion or 6
     ]
 
-# 4️⃣ Crear RADAR
-fig_radar = go.Figure(
-    go.Scatterpolar(
-        r=values,
-        theta=labels,
-        fill="toself",
-        line=dict(color="#18399e", width=2),
-        fillcolor="rgba(24,57,158,0.25)",
-        marker=dict(size=4)
-    )
-)
+# 5) Construir values_promedio con el mismo orden que 'golpes'
+prom_map = {p.nombre_golpe: p for p in promedios}
+
+values_promedio = []
+for g in golpes:
+    p = prom_map.get(g.nombre_golpe)
+    values_promedio += [
+        (p.avg_preparacion if p and p.avg_preparacion is not None else 6),
+        (p.avg_contacto    if p and p.avg_contacto    is not None else 6),
+        (p.avg_terminacion if p and p.avg_terminacion is not None else 6),
+    ]
+
+# 6) Crear RADAR con 2 series
+fig_radar = go.Figure()
+
+# Alumno (azul)
+fig_radar.add_trace(go.Scatterpolar(
+    r=values,
+    theta=labels,
+    fill="toself",
+    line=dict(color="#18399e", width=2),
+    fillcolor="rgba(24,57,158,0.25)",
+    marker=dict(size=4),
+    name="Alumno"
+))
+
+# Promedio grupo (naranja)
+fig_radar.add_trace(go.Scatterpolar(
+    r=values_promedio,
+    theta=labels,
+    fill="toself",
+    line=dict(color="#d4af37", width=2),
+    fillcolor="rgba(212,175,55,0.20)",
+    marker=dict(size=4),
+    name="Promedio grupo"
+))
 
 fig_radar.update_layout(
-    height=260,
-    margin=dict(l=10, r=10, t=15, b=10),
+    height=285,
+    margin=dict(l=15, r=15, t=23, b=20),
     showlegend=False,
+    hoverlabel=dict(
+    font_size=20
+    ),
+    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
     polar=dict(
         radialaxis=dict(
             range=[6, 13],
             showticklabels=False
         ),
         angularaxis=dict(
-            tickfont=dict(size=9),
+            tickfont=dict(size=11),
             rotation=90
         )
     )
@@ -748,7 +813,7 @@ st.markdown("""
 col_radar, col_foco = st.columns([1.2, 1])
 
 with col_radar:
-    st.plotly_chart(fig_radar, use_container_width=True)
+    st.plotly_chart(fig_radar, use_container_width=True, key=f"radar_{id_evaluacion}")
 
 with col_foco:
     tabla_foco_unica(top_2, bottom_2)

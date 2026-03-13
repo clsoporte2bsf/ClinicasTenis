@@ -189,7 +189,7 @@ elif seccion == "👤 Alumnos":
 
     with st.container(height=500):
         for a in alumnos:
-            col1, col2, col3, col4, col5, col6 = st.columns([2.8, 1, 2, 2.5, 1.5, 1])
+            col1, col2, col3, col4, col5, col6, col7 = st.columns([2.5, 1, 2, 2.5, 1.7, 1, 1])
 
             with col1:
                 nombre = st.text_input("Nombre", a.nombre, key=f"nom_{a.id_alumno}")
@@ -240,6 +240,19 @@ elif seccion == "👤 Alumnos":
                         torneos = :torneos
                     WHERE id_alumno = :id
                     """)
+            with col7:
+                if st.button("🗑", key=f"del_al_{a.id_alumno}"):
+
+                    query_delete = text("""
+                    DELETE FROM alumno
+                    WHERE id_alumno = :id
+                    """)
+
+                    with engine.begin() as conn:
+                        conn.execute(query_delete, {"id": a.id_alumno})
+
+                    st.session_state["alumno_eliminado"] = True
+                    st.rerun()
 
                     with engine.begin() as conn:
                         conn.execute(
@@ -746,4 +759,3 @@ if "msg" in st.session_state:
         mensaje.error("🗑️ Evaluación eliminada")
 
     del st.session_state["msg"]
-

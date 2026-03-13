@@ -87,7 +87,7 @@ with st.form("form_eval", clear_on_submit=st.session_state.reset):
     with col3:
         profesor = st.selectbox(
             "Profesor",
-            ["Rene Moreno", "Uriel Parra", "Salvador Morales", "Ricardo Rosas", "Julio Rendon"],
+            ["Rene Moreno", "Uriel Parra", "Salvador Morales", "Ricardo Rosas", "Julio Rendon", "Gilberto Merquiades", "Daniel Gonzalez", "Jose Mendoza"],
             key="profesor"
         )
         esfuerzo = st.number_input("Esfuerzo", 7, 13, step=1, key="esfuerzo")
@@ -141,20 +141,43 @@ if st.session_state.success_msg:
 
 if submit:
     try:
-        # 🔹 Obtener grupo actual del alumno
+        anio = fecha_evaluacion.year
+
+        # 1) Obtener grupo del alumno
         query_grupo = text("""
             SELECT grupo
             FROM alumno
             WHERE id_alumno = :id_alumno
         """)
-        anio = fecha_evaluacion.year
 
         with engine.begin() as conn:
-            grupo_alumno = conn.execute(
-                query_grupo,
-                {"id_alumno": id_alumno}
-            ).scalar()
-            insert_eval = text("""
+            grupo_alumno = conn.execute(query_grupo, {"id_alumno": id_alumno}).scalar()
+
+        # 2) Validar duplicado (opcional, para mensaje amigable)
+        check_dup = text("""
+            SELECT 1
+            FROM evaluaciones
+            WHERE id_alumno = :id_alumno
+              AND periodo = :periodo
+              AND tipo_evaluacion = :tipo_evaluacion
+              AND anio = :anio
+            LIMIT 1;
+        """)
+
+        with engine.begin() as conn:
+            existe = conn.execute(check_dup, {
+                "id_alumno": id_alumno,
+                "periodo": periodo,
+                "tipo_evaluacion": tipo_evaluacion,
+                "anio": anio
+            }).scalar()
+
+        if existe:
+            st.error("❌ Ya existe una evaluación para este alumno con el mismo Periodo y Tipo de evaluación (mismo año).")
+            st.stop()
+
+        # 3) Insert evaluación (solo si NO existe)
+        insert_eval = text("""
             INSERT INTO evaluaciones (
                 id_alumno, conducta, atencion, esfuerzo,
                 balance, movilidad, fuerza,
@@ -185,13 +208,15 @@ if submit:
                 "periodo": periodo,
                 "recomendaciones": recomendaciones,
                 "id_profesor": id_profesor,
-                "fecha_evaluacion": fecha_evaluacion, 
+                "fecha_evaluacion": fecha_evaluacion,
                 "tipo_evaluacion": tipo_evaluacion,
                 "grupo": grupo_alumno,
                 "anio": anio
             })
 
             id_evaluacion = result.fetchone()[0]
+
+            #INSERT DE evaluacion_tecnica
 
             insert_golpe = text("""
                 INSERT INTO evaluacion_tecnica (
