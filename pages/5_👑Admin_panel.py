@@ -12,7 +12,7 @@ if st.session_state.get("rol") != "admin":
     st.error("⛔ Acceso solo para administradores")
     st.stop()
 
-st.title("Panel de Administrador")
+st.title("Panel de Administración")
 
 st.caption(f"Usuario: {st.session_state.get('usuario')} | Rol: {st.session_state.get('rol')}")
 
